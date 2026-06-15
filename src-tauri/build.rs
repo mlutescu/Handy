@@ -145,9 +145,11 @@ fn build_apple_intelligence_bridge() {
     });
 
     // Check if the SDK supports FoundationModels (required for Apple Intelligence)
+    // Set HANDY_NO_APPLE_INTELLIGENCE=1 to force stub (e.g. when only Xcode CLI Tools are installed)
     let framework_path =
         Path::new(&sdk_path).join("System/Library/Frameworks/FoundationModels.framework");
-    let has_foundation_models = framework_path.exists();
+    let force_stub = env::var("HANDY_NO_APPLE_INTELLIGENCE").is_ok_and(|v| v == "1");
+    let has_foundation_models = !force_stub && framework_path.exists();
 
     let source_file = if has_foundation_models {
         println!("cargo:warning=Building with Apple Intelligence support.");

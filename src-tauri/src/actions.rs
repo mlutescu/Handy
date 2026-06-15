@@ -360,6 +360,15 @@ pub(crate) async fn process_transcription_output(
         final_text = converted_text;
     }
 
+    // Apply user-defined corrections before post-processing
+    if let Some(hm) = app.try_state::<std::sync::Arc<HistoryManager>>() {
+        let corrected = hm.apply_corrections(&final_text);
+        if corrected != final_text {
+            debug!("Corrections applied: '{}' → '{}'", final_text, corrected);
+            final_text = corrected;
+        }
+    }
+
     if post_process {
         if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
             post_processed_text = Some(processed_text.clone());
@@ -660,6 +669,53 @@ impl ShortcutAction for TranscribeAction {
     }
 }
 
+// CorrectLast Action — retrieves the last transcription and asks the frontend to show
+// a correction dialog pre-filled with the text.
+struct CorrectLastAction;
+
+impl ShortcutAction for CorrectLastAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        let hm = match app.try_state::<std::sync::Arc<HistoryManager>>() {
+            Some(hm) => hm,
+            None => {
+                warn!("CorrectLastAction: HistoryManager not available");
+                return;
+            }
+        };
+
+        match hm.get_latest_completed_entry() {
+            Ok(Some(entry)) => {
+                let display_text = entry
+                    .post_processed_text
+                    .clone()
+                    .unwrap_or_else(|| entry.transcription_text.clone());
+                let payload = CorrectionRequestedEvent {
+                    history_id: entry.id,
+                    original_text: display_text,
+                };
+                if let Err(e) = app.emit("correction-requested", payload) {
+                    error!("Failed to emit correction-requested event: {}", e);
+                }
+                crate::show_main_window_if_needed(app);
+            }
+            Ok(None) => {
+                debug!("CorrectLastAction: no completed history entry found");
+            }
+            Err(e) => {
+                error!("CorrectLastAction: failed to fetch last entry: {}", e);
+            }
+        }
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
+#[derive(Clone, serde::Serialize)]
+struct CorrectionRequestedEvent {
+    history_id: i64,
+    original_text: String,
+}
+
 // Cancel Action
 struct CancelAction;
 
@@ -716,6 +772,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "test".to_string(),
         Arc::new(TestAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "correct_last".to_string(),
+        Arc::new(CorrectLastAction) as Arc<dyn ShortcutAction>,
     );
     map
 });

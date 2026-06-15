@@ -10,6 +10,7 @@ import {
 import { ModelStateEvent, RecordingErrorEvent } from "./lib/types/events";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
+import { CorrectionDialog } from "./components/CorrectionDialog";
 import Footer from "./components/footer";
 import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
@@ -17,6 +18,11 @@ import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
+
+interface CorrectionRequestedPayload {
+  history_id: number;
+  original_text: string;
+}
 
 type OnboardingStep = "accessibility" | "model" | "done";
 
@@ -36,6 +42,8 @@ function App() {
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("general");
+  const [correctionPending, setCorrectionPending] =
+    useState<CorrectionRequestedPayload | null>(null);
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
@@ -121,6 +129,19 @@ function App() {
       unlisten.then((fn) => fn());
     };
   }, [t]);
+
+  // Listen for correction-requested events triggered by the correct_last shortcut
+  useEffect(() => {
+    const unlisten = listen<CorrectionRequestedPayload>(
+      "correction-requested",
+      (event) => {
+        setCorrectionPending(event.payload);
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // Listen for paste failures and show a toast.
   // The technical error detail is logged to handy.log on the Rust side
@@ -282,6 +303,14 @@ function App() {
       </div>
       {/* Fixed footer at bottom */}
       <Footer />
+
+      {correctionPending && (
+        <CorrectionDialog
+          historyId={correctionPending.history_id}
+          originalText={correctionPending.original_text}
+          onClose={() => setCorrectionPending(null)}
+        />
+      )}
     </div>
   );
 }

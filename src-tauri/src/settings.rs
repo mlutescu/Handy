@@ -763,6 +763,22 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "escape".to_string(),
         },
     );
+    #[cfg(target_os = "windows")]
+    let default_correct_last_shortcut = "ctrl+shift+c";
+    #[cfg(target_os = "macos")]
+    let default_correct_last_shortcut = "option+shift+c";
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let default_correct_last_shortcut = "ctrl+shift+c";
+    bindings.insert(
+        "correct_last".to_string(),
+        ShortcutBinding {
+            id: "correct_last".to_string(),
+            name: "Correct Last Transcription".to_string(),
+            description: "Opens a dialog to correct the last transcription and improve future results.".to_string(),
+            default_binding: default_correct_last_shortcut.to_string(),
+            current_binding: default_correct_last_shortcut.to_string(),
+        },
+    );
 
     AppSettings {
         bindings,

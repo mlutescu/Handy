@@ -31,7 +31,23 @@ static MIGRATIONS: &[M] = &[
     M::up("ALTER TABLE transcription_history ADD COLUMN post_processed_text TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_prompt TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_requested BOOLEAN NOT NULL DEFAULT 0;"),
+    M::up(
+        "CREATE TABLE IF NOT EXISTS corrections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wrong_text TEXT NOT NULL,
+            correct_text TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );",
+    ),
 ];
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct Correction {
+    pub id: i64,
+    pub wrong_text: String,
+    pub correct_text: String,
+    pub created_at: i64,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PaginatedHistory {
@@ -636,6 +652,126 @@ impl HistoryManager {
         }
 
         Ok(())
+    }
+
+    /// Save a new correction pair (wrong → correct) to the database.
+    /// Also extracts new vocabulary tokens from correct_text and adds them
+    /// to Whisper's custom_words pool for richer initial_prompt on future runs.
+    pub fn save_correction(&self, wrong_text: String, correct_text: String) -> Result<Correction> {
+        let created_at = chrono::Utc::now().timestamp();
+        let conn = self.get_connection()?;
+        conn.execute(
+            "INSERT INTO corrections (wrong_text, correct_text, created_at) VALUES (?1, ?2, ?3)",
+            params![&wrong_text, &correct_text, created_at],
+        )?;
+        let id = conn.last_insert_rowid();
+        let correction = Correction {
+            id,
+            wrong_text,
+            correct_text: correct_text.clone(),
+            created_at,
+        };
+
+        // Enrich Whisper custom_words with new vocabulary from the correction
+        self.enrich_custom_words(&correct_text);
+
+        debug!("Saved correction id={}", id);
+        Ok(correction)
+    }
+
+    /// Adds vocabulary tokens from correct_text that are not already in custom_words.
+    fn enrich_custom_words(&self, correct_text: &str) {
+        let mut settings = crate::settings::get_settings(&self.app_handle);
+        let existing: std::collections::HashSet<String> = settings
+            .custom_words
+            .iter()
+            .map(|w| w.to_lowercase())
+            .collect();
+
+        let new_words: Vec<String> = correct_text
+            .split_whitespace()
+            .filter(|w| w.len() >= 3)
+            .filter(|w| !existing.contains(&w.to_lowercase()))
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .filter(|w| !w.is_empty())
+            .collect();
+
+        if new_words.is_empty() {
+            return;
+        }
+
+        debug!("Adding {} new custom words from correction", new_words.len());
+        settings.custom_words.extend(new_words);
+        settings.custom_words.sort();
+        settings.custom_words.dedup();
+        crate::settings::write_settings(&self.app_handle, settings);
+    }
+
+    pub fn get_corrections(&self) -> Result<Vec<Correction>> {
+        let conn = self.get_connection()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, wrong_text, correct_text, created_at FROM corrections ORDER BY id DESC",
+        )?;
+        let corrections = stmt
+            .query_map([], |row| {
+                Ok(Correction {
+                    id: row.get("id")?,
+                    wrong_text: row.get("wrong_text")?,
+                    correct_text: row.get("correct_text")?,
+                    created_at: row.get("created_at")?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(corrections)
+    }
+
+    pub fn delete_correction(&self, id: i64) -> Result<()> {
+        let conn = self.get_connection()?;
+        conn.execute("DELETE FROM corrections WHERE id = ?1", params![id])?;
+        debug!("Deleted correction id={}", id);
+        Ok(())
+    }
+
+    /// Apply all stored corrections to a transcription text.
+    /// Substitutions are case-insensitive on the match side but preserve the
+    /// exact correct_text casing in the output.
+    pub fn apply_corrections(&self, text: &str) -> String {
+        let corrections = match self.get_corrections() {
+            Ok(c) => c,
+            Err(e) => {
+                error!("Failed to load corrections: {}", e);
+                return text.to_string();
+            }
+        };
+
+        if corrections.is_empty() {
+            return text.to_string();
+        }
+
+        let mut result = text.to_string();
+        for correction in &corrections {
+            if correction.wrong_text.is_empty() || correction.correct_text.is_empty() {
+                continue;
+            }
+            // Case-insensitive whole-string match for short phrases;
+            // for single words, only replace exact word boundaries.
+            let lower_result = result.to_lowercase();
+            let lower_wrong = correction.wrong_text.to_lowercase();
+            if lower_result.contains(&lower_wrong) {
+                // Simple case-insensitive replace
+                let mut new_result = String::with_capacity(result.len());
+                let mut remaining = result.as_str();
+                let wrong_lower = correction.wrong_text.to_lowercase();
+                while let Some(pos) = remaining.to_lowercase().find(&wrong_lower) {
+                    new_result.push_str(&remaining[..pos]);
+                    new_result.push_str(&correction.correct_text);
+                    remaining = &remaining[pos + correction.wrong_text.len()..];
+                }
+                new_result.push_str(remaining);
+                result = new_result;
+            }
+        }
+        result
     }
 
     fn format_timestamp_title(&self, timestamp: i64) -> String {

@@ -84,6 +84,10 @@ fn build_console_filter() -> env_filter::Filter {
     builder.build()
 }
 
+pub fn show_main_window_if_needed(app: &AppHandle) {
+    show_main_window(app);
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
         if let Err(e) = main_window.unminimize() {
@@ -425,6 +429,9 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::history::save_correction,
+            commands::history::get_corrections,
+            commands::history::delete_correction,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![managers::history::HistoryUpdatePayload,]);

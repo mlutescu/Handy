@@ -296,6 +296,48 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     }
 }
 
+/// Remove spurious commas that Whisper inserts between words during speaker pauses.
+/// Pattern: ", " between two lowercase words (e.g. "teste, ca, să" → "teste ca să")
+/// Preserves commas that naturally belong in the text (e.g. lists, clauses).
+fn remove_pause_commas(text: &str) -> String {
+    // Replace ", " between words where comma is followed by a lowercase letter
+    // This catches "word, word" patterns typical of pause-inserted commas
+    let mut result = text.to_string();
+    // Keep replacing until stable
+    loop {
+        let new = regex_replace_pause_commas(&result);
+        if new == result {
+            break;
+        }
+        result = new;
+    }
+    result
+}
+
+fn regex_replace_pause_commas(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+    while i < len {
+        if chars[i] == ',' && i + 1 < len && chars[i + 1] == ' ' {
+            // Check if char before comma is a letter and char after space is lowercase letter
+            let before_is_letter = i > 0 && (chars[i - 1].is_alphabetic() || chars[i - 1] == 'ă' || chars[i - 1] == 'î' || chars[i - 1] == 'â' || chars[i - 1] == 'ș' || chars[i - 1] == 'ț');
+            let after_char_idx = i + 2;
+            let after_is_lowercase = after_char_idx < len && chars[after_char_idx].is_lowercase();
+            if before_is_letter && after_is_lowercase {
+                // Replace ", " with " "
+                output.push(' ');
+                i += 2; // skip ", "
+                continue;
+            }
+        }
+        output.push(chars[i]);
+        i += 1;
+    }
+    output
+}
+
 async fn maybe_convert_chinese_variant(
     settings: &AppSettings,
     transcription: &str,
@@ -735,7 +777,7 @@ struct TestAction;
 impl ShortcutAction for TestAction {
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         log::info!(
-            "Shortcut ID '{}': Started - {} (App: {})", // Changed "Pressed" to "Started" for consistency
+            "Shortcut ID '{}': Started - {} (App: {})",
             binding_id,
             shortcut_str,
             app.package_info().name
@@ -744,12 +786,22 @@ impl ShortcutAction for TestAction {
 
     fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         log::info!(
-            "Shortcut ID '{}': Stopped - {} (App: {})", // Changed "Released" to "Stopped" for consistency
+            "Shortcut ID '{}': Stopped - {} (App: {})",
             binding_id,
             shortcut_str,
             app.package_info().name
         );
     }
+}
+
+pub struct OpenSettingsAction;
+
+impl ShortcutAction for OpenSettingsAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::show_main_window_if_needed(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
 }
 
 // Static Action Map
@@ -776,6 +828,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "correct_last".to_string(),
         Arc::new(CorrectLastAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "open_settings".to_string(),
+        Arc::new(OpenSettingsAction) as Arc<dyn ShortcutAction>,
     );
     map
 });

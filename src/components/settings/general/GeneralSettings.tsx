@@ -26,6 +26,7 @@ export const GeneralSettings: React.FC = () => {
         {!isLinux && !pushToTalk && (
           <ShortcutInput shortcutId="cancel" grouped={true} />
         )}
+        <ShortcutInput shortcutId="open_settings" grouped={true} />
       </SettingsGroup>
       <ModelSettingsCard />
       <SettingsGroup title={t("settings.sound.title")}>

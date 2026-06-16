@@ -424,9 +424,15 @@ fn register_all_shortcuts_for_implementation(
 
         // Register with the appropriate implementation
         let result = match implementation {
-            KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding),
-            KeyboardImplementation::HandyKeys => handy_keys::register_shortcut(app, binding),
+            KeyboardImplementation::Tauri => tauri_impl::register_shortcut(app, binding.clone()),
+            KeyboardImplementation::HandyKeys => handy_keys::register_shortcut(app, binding.clone()),
         };
+
+        // Persist new bindings that weren't in saved settings
+        if current_settings.bindings.get(id).is_none() {
+            current_settings.bindings.insert(id.clone(), binding);
+            reset_bindings.push(id.clone()); // reuse the save trigger
+        }
 
         if let Err(e) = result {
             error!(
@@ -644,6 +650,30 @@ pub fn change_update_checks_setting(app: AppHandle, enabled: bool) -> Result<(),
 pub fn update_custom_words(app: AppHandle, words: Vec<String>) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.custom_words = words;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn update_lang_prompts(
+    app: AppHandle,
+    lang_prompts: std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.lang_prompts = lang_prompts;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn update_allowed_languages(
+    app: AppHandle,
+    languages: Vec<String>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.allowed_languages = languages;
     settings::write_settings(&app, settings);
     Ok(())
 }

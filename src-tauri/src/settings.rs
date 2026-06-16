@@ -372,6 +372,10 @@ pub struct AppSettings {
     #[serde(default)]
     pub custom_words: Vec<String>,
     #[serde(default)]
+    pub lang_prompts: HashMap<String, String>,
+    #[serde(default = "default_allowed_languages")]
+    pub allowed_languages: Vec<String>,
+    #[serde(default)]
     pub model_unload_timeout: ModelUnloadTimeout,
     #[serde(default = "default_word_correction_threshold")]
     pub word_correction_threshold: f64,
@@ -477,6 +481,10 @@ fn default_log_level() -> LogLevel {
 
 fn default_word_correction_threshold() -> f64 {
     0.18
+}
+
+fn default_allowed_languages() -> Vec<String> {
+    vec!["ro".to_string(), "en".to_string()]
 }
 
 fn default_paste_delay_ms() -> u64 {
@@ -779,6 +787,16 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_correct_last_shortcut.to_string(),
         },
     );
+    bindings.insert(
+        "open_settings".to_string(),
+        ShortcutBinding {
+            id: "open_settings".to_string(),
+            name: "Open Settings".to_string(),
+            description: "Opens the Handy settings window.".to_string(),
+            default_binding: "option+d".to_string(),
+            current_binding: "option+d".to_string(),
+        },
+    );
 
     AppSettings {
         bindings,
@@ -800,6 +818,8 @@ pub fn get_default_settings() -> AppSettings {
         debug_mode: false,
         log_level: default_log_level(),
         custom_words: Vec::new(),
+        lang_prompts: HashMap::new(),
+        allowed_languages: default_allowed_languages(),
         model_unload_timeout: ModelUnloadTimeout::default(),
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),

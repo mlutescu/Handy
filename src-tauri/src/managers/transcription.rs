@@ -8,6 +8,7 @@ use anyhow::Result;
 use log::{debug, error, info, warn};
 use serde::Serialize;
 use specta::Type;
+use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
@@ -77,6 +78,7 @@ pub struct TranscriptionManager {
 
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
+        error!("=== TranscriptionManager::new() — PAUSE REMOVAL PREPROCESSING ACTIVE ===");
         let manager = Self {
             engine: Arc::new(Mutex::new(None)),
             model_manager,
@@ -450,6 +452,7 @@ impl TranscriptionManager {
 
         let st = std::time::Instant::now();
 
+        error!("=== TRANSCRIBE FUNCTION EXECUTING ===");
         debug!("Audio vector length: {}", audio.len());
 
         if audio.is_empty() {
@@ -527,6 +530,7 @@ impl TranscriptionManager {
                 || -> Result<transcribe_rs::TranscriptionResult> {
                     match &mut engine {
                         LoadedEngine::Whisper(whisper_engine) => {
+                            info!("=== USING WHISPER ENGINE ===");
                             let whisper_language = if validated_language == "auto" {
                                 None
                             } else {
@@ -541,21 +545,68 @@ impl TranscriptionManager {
                             };
 
                             let params = WhisperInferenceParams {
-                                language: whisper_language,
-                                translate: settings.translate_to_english,
+                                language: whisper_language.clone(),
+                                translate: false, // Explicitly disable translation
                                 initial_prompt: if settings.custom_words.is_empty() {
                                     None
                                 } else {
                                     Some(settings.custom_words.join(", "))
                                 },
+                                lang_prompts: {
+                                    // When allowed_languages is non-empty, restrict Whisper's
+                                    // language detection to that set. Build effective lang_prompts
+                                    // from the allowed set (seeds restriction) overlaid with
+                                    // any configured per-language vocabulary.
+                                    // When allowed_languages is empty, send no lang_prompts
+                                    // so restriction logic in whisper.cpp is skipped.
+                                    if settings.allowed_languages.is_empty() {
+                                        HashMap::new()
+                                    } else {
+                                        let mut lp: HashMap<String, String> = settings
+                                            .allowed_languages
+                                            .iter()
+                                            .map(|lang| (lang.clone(), String::new()))
+                                            .collect();
+                                        // Overlay configured per-language vocabulary
+                                        for (lang, vocab) in &settings.lang_prompts {
+                                            if lp.contains_key(lang) {
+                                                lp.insert(lang.clone(), vocab.clone());
+                                            }
+                                        }
+                                        // Migrate custom_words into the Romanian prompt
+                                        if !settings.custom_words.is_empty() {
+                                            lp.entry("ro".to_string())
+                                                .and_modify(|v| {
+                                                    if v.is_empty() {
+                                                        *v = settings.custom_words.join(", ");
+                                                    }
+                                                });
+                                        }
+                                        lp
+                                    }
+                                },
                                 ..Default::default()
                             };
 
-                            whisper_engine
+                            info!(
+                                "Whisper transcription params: language={:?}, translate={}",
+                                whisper_language, params.translate
+                            );
+
+                            info!("Whisper inference starting...");
+                            let result = whisper_engine
                                 .transcribe_with(&audio, &params)
-                                .map_err(|e| anyhow::anyhow!("Whisper transcription failed: {}", e))
+                                .map_err(|e| anyhow::anyhow!("Whisper transcription failed: {}", e));
+                            info!("Whisper inference finished, result ok={}", result.is_ok());
+                            
+                            if let Ok(ref transcription) = result {
+                                info!("Whisper raw output: {}", transcription.text);
+                            }
+                            
+                            result
                         }
                         LoadedEngine::Parakeet(parakeet_engine) => {
+                            info!("=== USING PARAKEET ENGINE ===");
                             let params = ParakeetParams {
                                 timestamp_granularity: Some(TimestampGranularity::Segment),
                                 ..Default::default()
@@ -597,6 +648,7 @@ impl TranscriptionManager {
                             .transcribe(&audio, &TranscribeOptions::default())
                             .map_err(|e| anyhow::anyhow!("GigaAM transcription failed: {}", e)),
                         LoadedEngine::Canary(canary_engine) => {
+                            info!("=== USING CANARY ENGINE ===");
                             let lang = if validated_language == "auto" {
                                 None
                             } else {
@@ -604,9 +656,13 @@ impl TranscriptionManager {
                             };
                             let options = TranscribeOptions {
                                 language: lang,
-                                translate: settings.translate_to_english,
+                                translate: false, // Explicitly disable translation
                                 ..Default::default()
                             };
+                            info!(
+                                "Canary transcription options: language={:?}, translate={}",
+                                options.language, options.translate
+                            );
                             canary_engine
                                 .transcribe(&audio, &options)
                                 .map_err(|e| anyhow::anyhow!("Canary transcription failed: {}", e))

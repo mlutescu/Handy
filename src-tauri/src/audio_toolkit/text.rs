@@ -270,6 +270,60 @@ fn collapse_stutters(text: &str) -> String {
     result.join(" ")
 }
 
+/// Split text into sentence-like segments by common sentence-ending punctuation.
+fn split_into_sentences(text: &str) -> Vec<String> {
+    let mut sentences: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for ch in text.chars() {
+        current.push(ch);
+        if matches!(ch, '.' | '!' | '?') {
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() {
+                sentences.push(trimmed);
+            }
+            current.clear();
+        }
+    }
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() {
+        sentences.push(trimmed);
+    }
+    sentences
+}
+
+/// Remove repeated sentences: if the same sentence (case-insensitive) appears 2+ times
+/// consecutively or overall (for hallucination patterns), keep only the first occurrence.
+/// Also removes the entire output if it is a known hallucination-only result.
+fn collapse_repeated_sentences(text: &str) -> String {
+    let sentences = split_into_sentences(text);
+    if sentences.is_empty() {
+        return text.to_string();
+    }
+
+    // Detect: if 2 or more unique sentences repeat ≥ 2 times total → likely hallucination
+    let total = sentences.len();
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for s in &sentences {
+        *seen.entry(s.to_lowercase()).or_insert(0) += 1;
+    }
+    let max_repeats = seen.values().copied().max().unwrap_or(0);
+    // If any sentence repeats 2+ times AND repetitions make up >50% of output → suppress all
+    if max_repeats >= 2 {
+        let repeated_count: usize = seen.values().filter(|&&n| n >= 2).sum();
+        if repeated_count > total / 2 {
+            return String::new();
+        }
+    }
+
+    // Otherwise deduplicate: keep first occurrence of each sentence
+    let mut seen_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+    sentences
+        .into_iter()
+        .filter(|s| seen_set.insert(s.to_lowercase()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Filters transcription output by removing filler words and stutter artifacts.
 ///
 /// This function cleans up raw transcription text by:
@@ -311,6 +365,10 @@ pub fn filter_transcription_output(
 
     // Collapse repeated 1-2 letter words (stutter artifacts like "wh wh wh wh")
     filtered = collapse_stutters(&filtered);
+
+    // Remove repeated sentence-level hallucinations (e.g. Whisper repeating a YouTube
+    // outro phrase 3+ times when it hears silence or low-quality audio).
+    filtered = collapse_repeated_sentences(&filtered);
 
     // Clean up multiple spaces to single space
     filtered = MULTI_SPACE_PATTERN.replace_all(&filtered, " ").to_string();

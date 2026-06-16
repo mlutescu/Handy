@@ -19,6 +19,7 @@ import { HistoryLimit } from "../HistoryLimit";
 import { RecordingRetentionPeriodSelector } from "../RecordingRetentionPeriod";
 import { ExperimentalToggle } from "../ExperimentalToggle";
 import { useSettings } from "../../../hooks/useSettings";
+import { useModelStore } from "../../../stores/modelStore";
 import { KeyboardImplementationSelector } from "../debug/KeyboardImplementationSelector";
 import { AccelerationSelector } from "../AccelerationSelector";
 import { LazyStreamClose } from "../LazyStreamClose";
@@ -27,6 +28,10 @@ export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
   const experimentalEnabled = getSetting("experimental_enabled") || false;
+  const selectedModelId = getSetting("selected_model") as string | undefined;
+  const models = useModelStore((s) => s.models);
+  const isWhisperModel =
+    models.find((m) => m.id === selectedModelId)?.engine_type === "Whisper";
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
@@ -48,8 +53,12 @@ export const AdvancedSettings: React.FC = () => {
 
       <SettingsGroup title={t("settings.advanced.groups.transcription")}>
         <CustomWords descriptionMode="tooltip" grouped />
-        <AllowedLanguages descriptionMode="tooltip" grouped />
-        <LangPrompts descriptionMode="tooltip" grouped />
+        {isWhisperModel && (
+          <>
+            <AllowedLanguages descriptionMode="tooltip" grouped />
+            <LangPrompts descriptionMode="tooltip" grouped />
+          </>
+        )}
         <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
 

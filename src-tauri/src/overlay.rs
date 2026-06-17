@@ -1,12 +1,12 @@
 use crate::input;
 use crate::settings;
 use crate::settings::OverlayPosition;
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 
 #[cfg(not(target_os = "macos"))]
 use log::debug;
 
-#[cfg(not(target_os = "macos"))]
 use tauri::WebviewWindowBuilder;
 
 #[cfg(target_os = "macos")]
@@ -382,6 +382,91 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
             std::thread::sleep(std::time::Duration::from_millis(300));
             let _ = window_clone.hide();
         });
+    }
+}
+
+/// Payload emitted to the review dialog window.
+#[derive(Serialize, Clone)]
+pub struct TranscriptionReviewPayload {
+    pub original_text: String,
+    pub processed_text: String,
+}
+
+const REVIEW_DIALOG_WIDTH: f64 = 540.0;
+const REVIEW_DIALOG_HEIGHT: f64 = 220.0;
+
+/// Creates the review dialog window at startup and keeps it hidden.
+/// The window stays alive so its React event listeners are always ready.
+pub fn create_review_dialog(app_handle: &AppHandle) {
+    let mut builder = WebviewWindowBuilder::new(
+        app_handle,
+        "review_dialog",
+        tauri::WebviewUrl::App("src/review/index.html".into()),
+    )
+    .title("Review transcription")
+    .resizable(false)
+    .inner_size(REVIEW_DIALOG_WIDTH, REVIEW_DIALOG_HEIGHT)
+    .shadow(true)
+    .maximizable(false)
+    .minimizable(false)
+    .closable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .transparent(true)
+    .focused(false)
+    .visible(false);
+
+    if let Some(data_dir) = crate::portable::data_dir() {
+        builder = builder.data_directory(data_dir.join("webview"));
+    }
+
+    match builder.build() {
+        Ok(_) => log::debug!("Review dialog window created (hidden)"),
+        Err(e) => log::error!("Failed to create review dialog window: {}", e),
+    }
+}
+
+/// Reveals the review dialog and emits the transcription payload to it.
+pub fn show_review_overlay(
+    app_handle: &AppHandle,
+    original_text: String,
+    processed_text: String,
+) {
+    let Some(window) = app_handle.get_webview_window("review_dialog") else {
+        log::error!("Review dialog window not found");
+        return;
+    };
+
+    // Center on the primary monitor
+    if let Some(monitor) = app_handle.primary_monitor().ok().flatten() {
+        let mx = monitor.position().x as f64;
+        let my = monitor.position().y as f64;
+        let mw = monitor.size().width as f64 / monitor.scale_factor();
+        let mh = monitor.size().height as f64 / monitor.scale_factor();
+        let cx = mx + (mw - REVIEW_DIALOG_WIDTH) / 2.0;
+        let cy = my + (mh - REVIEW_DIALOG_HEIGHT) / 2.0;
+        let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition {
+            x: cx,
+            y: cy,
+        }));
+    }
+
+    let _ = window.show();
+    let _ = window.set_focus();
+    let _ = window.emit(
+        "transcription-review",
+        TranscriptionReviewPayload {
+            original_text,
+            processed_text,
+        },
+    );
+}
+
+/// Hides the review dialog window without inserting text.
+pub fn hide_review_overlay(app_handle: &AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("review_dialog") {
+        let _ = window.hide();
     }
 }
 

@@ -1,0 +1,130 @@
+/* ── Root ── */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* ── Backdrop – fills the transparent Tauri window ── */
+.review-backdrop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Dialog card ── */
+.review-dialog {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #111827;
+  border: 1px solid #1d4ed866;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 8px 32px #00000088,
+    0 0 0 1px #1d4ed844 inset;
+  box-sizing: border-box;
+}
+
+/* ── Header bar ── */
+.review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid #1e293b;
+  /* macOS drag region so users can move the window */
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.review-title {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #93c5fd;
+  letter-spacing: 0.02em;
+}
+
+.review-hint {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 11px;
+  color: #4b5563;
+}
+
+/* ── Editable textarea ── */
+.review-textarea {
+  flex: 1;
+  resize: none;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f1f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 10px 14px;
+  box-sizing: border-box;
+  -webkit-app-region: no-drag;
+}
+
+.review-textarea::selection {
+  background: #1d4ed866;
+}
+
+/* ── Footer with buttons ── */
+.review-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid #1e293b;
+  -webkit-app-region: drag;
+}
+
+.review-btn {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    opacity 120ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.review-btn.cancel {
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+.review-btn.cancel:hover {
+  background: #273548;
+  color: #cbd5e1;
+}
+
+.review-btn.confirm {
+  background: #1d4ed8;
+  color: #eff6ff;
+}
+
+.review-btn.confirm:hover {
+  background: #2563eb;
+}
+
+.review-btn:active {
+  opacity: 0.8;
+}

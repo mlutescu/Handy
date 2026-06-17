@@ -612,5 +612,11 @@
   "overlay": {
     "transcribing": "Transcribing...",
     "processing": "Processing..."
+  },
+  "settings": {
+    "reviewBeforeInsert": {
+      "label": "Review Before Insert",
+      "description": "Show a dialog to review and correct transcribed text before it is inserted into the target app"
+    }
   }
 }

@@ -17,6 +17,7 @@
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",
     "check:translations": "bun scripts/check-translations.ts",
+    "deploy:local": "HANDY_NO_APPLE_INTELLIGENCE=1 bun run tauri build && rm -rf '/Applications/Handy Dev.app' && cp -R 'src-tauri/target/release/bundle/macos/Handy Dev.app' /Applications/",
     "postinstall": "bun scripts/check-nix-deps.ts"
   },
   "dependencies": {

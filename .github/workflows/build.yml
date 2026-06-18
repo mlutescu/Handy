@@ -46,6 +46,7 @@ on:
 
 env:
   TSC_VERSION: "0.9.0"
+  HANDY_NO_APPLE_INTELLIGENCE: "1"
 
 jobs:
   build:
